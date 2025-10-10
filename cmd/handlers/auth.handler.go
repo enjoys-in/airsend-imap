@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/enjoys-in/airsend-imap/cmd/services"
 	"net/http"
+
+	"github.com/enjoys-in/airsend-imap/cmd/services"
 )
 
 type AuthHandler struct {

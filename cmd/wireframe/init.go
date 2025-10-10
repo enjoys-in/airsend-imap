@@ -29,6 +29,11 @@ func InitWireframe() *AppWireframe {
 		log.Fatal("❌ Failed to connect DB:", err)
 	}
 	defer db.Close()
+	err = db.Conn.Ping()
+	if err != nil {
+		log.Fatal("❌ Failed to ping DB:", err)
+	}
+	log.Println("✅ DB connected")
 
 	repo := repository.NewRepository(db)
 	svc := services.NewServices(repo)

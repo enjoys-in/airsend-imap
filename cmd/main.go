@@ -5,8 +5,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"github.com/enjoys-in/airsend-imap/cmd/api"
+	_ "github.com/enjoys-in/airsend-imap/cmd/api"
 	"github.com/enjoys-in/airsend-imap/cmd/imap"
 	"github.com/enjoys-in/airsend-imap/cmd/wireframe"
 )
@@ -19,8 +20,9 @@ func main() {
 
 	// Run IMAP and HTTP in parallel
 	go imap.RunImap(app)
-	go api.RunHttpApi(app)
+	// go api.RunHttpApi(app)
 
+	time.Sleep(2 * time.Second)
 	// Graceful shutdown
 	log.Println("🧩 Services started. Press Ctrl+C to stop.")
 	stop := make(chan os.Signal, 1)
