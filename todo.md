@@ -21,3 +21,29 @@
 | `STORE`                     | Change message flags (Seen, Deleted, etc.)             |
 | `COPY`                      | Copy message to another mailbox                        |
 | `UID`                       | Version of FETCH/STORE/COPY/SEARCH using unique IDs    |
+
+
+✅ Authorize
+✅ CreateMailbox
+✅ GetMessageLiteral
+✅ GetMailboxVisibility
+✅ UpdateMailboxName
+✅ DeleteMailbox
+✅ CreateMessage
+✅ AddMessagesToMailbox
+✅ RemoveMessagesFromMailbox
+✅ MoveMessages
+✅ MarkMessagesSeen
+✅ MarkMessagesFlagged
+✅ ListMailboxes
+✅ ListMessages
+✅ GetMessageFlags
+✅ ListMessages
+✅ ListMessages
+
+
+
+
+
+
+

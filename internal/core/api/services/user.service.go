@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/enjoys-in/airsend-imap/internal/imap"
+	"github.com/enjoys-in/airsend-imap/internal/core/imap"
 	"golang.org/x/time/rate"
 )
 

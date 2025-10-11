@@ -3,10 +3,10 @@ package wireframe
 import (
 	"log"
 
-	"github.com/enjoys-in/airsend-imap/cmd/handlers"
-	"github.com/enjoys-in/airsend-imap/cmd/repository"
-	"github.com/enjoys-in/airsend-imap/cmd/services"
 	"github.com/enjoys-in/airsend-imap/config"
+	"github.com/enjoys-in/airsend-imap/internal/core/api/handlers"
+	"github.com/enjoys-in/airsend-imap/internal/core/api/repository"
+	"github.com/enjoys-in/airsend-imap/internal/core/api/services"
 	plugins "github.com/enjoys-in/airsend-imap/internal/plugins/postgres"
 )
 

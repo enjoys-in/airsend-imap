@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/enjoys-in/airsend-imap/cmd/services"
+	"github.com/enjoys-in/airsend-imap/internal/core/api/services"
 )
 
 type AuthHandler struct {

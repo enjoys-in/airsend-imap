@@ -13,7 +13,7 @@ import (
 	"github.com/ProtonMail/gluon"
 	"github.com/ProtonMail/gluon/limits"
 	"github.com/enjoys-in/airsend-imap/cmd/wireframe"
-	"github.com/enjoys-in/airsend-imap/internal/imap"
+	"github.com/enjoys-in/airsend-imap/internal/core/imap"
 	_ "github.com/mattn/go-sqlite3"
 )
 

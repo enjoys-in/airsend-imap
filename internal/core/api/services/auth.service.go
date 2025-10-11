@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 
-	"github.com/enjoys-in/airsend-imap/cmd/repository"
+	"github.com/enjoys-in/airsend-imap/internal/core/api/repository"
 )
 
 type AuthService interface {

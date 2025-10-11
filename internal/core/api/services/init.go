@@ -1,6 +1,6 @@
 package services
 
-import "github.com/enjoys-in/airsend-imap/cmd/repository"
+import "github.com/enjoys-in/airsend-imap/internal/core/api/repository"
 
 type Services struct {
 	Auth AuthService
