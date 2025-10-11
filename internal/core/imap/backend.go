@@ -5,77 +5,31 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"log"
 	"strings"
 
-	"time"
-
 	"github.com/ProtonMail/gluon/connector"
 	"github.com/ProtonMail/gluon/imap"
 	"github.com/enjoys-in/airsend-imap/internal/core/queries"
+	"github.com/enjoys-in/airsend-imap/internal/interfaces"
+	user_interfaces "github.com/enjoys-in/airsend-imap/internal/interfaces/user"
 	"github.com/enjoys-in/airsend-imap/internal/utils/encryption"
 )
 
 // MyDatabaseConnector implements the connector.Connector interface
 type MyDatabaseConnector struct {
 	db      *sql.DB
-	user    *UserConfig
+	user    *user_interfaces.UserConfig
 	updates chan imap.Update
+	svc     *interfaces.Services
 
 	lastClientIMAPID     imap.IMAPID
 	allowUnknownMailbox  bool
 	folderPrefix         string
 	labelsPrefix         string
 	updatesAllowedToFail bool
-}
-type OpenPGPKeys struct {
-	PrivateKey            string `json:"privateKey"`
-	PublicKey             string `json:"publicKey"`
-	RevocationCertificate string `json:"revocationCertificate"`
-}
-type SystemEmail struct {
-	IsSystemEmail    bool   `json:"is_system_email"`
-	SystemEmailReply string `json:"system_email_reply"`
-}
-type UserConfig struct {
-	ID          string      `json:"id"`
-	Email       string      `json:"email"`
-	Hash        string      `json:"hash"`
-	TenantName  string      `json:"tenant_name"`
-	MailboxSize int         `json:"mailbox_size"`
-	Usage       int         `json:"usage"`
-	Key         string      `json:"key"`
-	OpenPGP     OpenPGPKeys `json:"open_pgp"`
-	SystemEmail SystemEmail `json:"system_email"`
-}
-type Connector interface {
-	Authorize(ctx context.Context, username string, password []byte) bool
-	CreateMailbox(ctx context.Context, name []string) (imap.Mailbox, error)
-	GetMessageLiteral(ctx context.Context, id imap.MessageID) ([]byte, error)
-	GetMailboxVisibility(ctx context.Context, mboxID imap.MailboxID) imap.MailboxVisibility
-	UpdateMailboxName(ctx context.Context, mboxID imap.MailboxID, newName []string) error
-	DeleteMailbox(ctx context.Context, mboxID imap.MailboxID) error
-	CreateMessage(ctx context.Context, mboxID imap.MailboxID, literal []byte, flags imap.FlagSet, date time.Time) (imap.Message, []byte, error)
-	AddMessagesToMailbox(ctx context.Context, messageIDs []imap.MessageID, mboxID imap.MailboxID) error
-	RemoveMessagesFromMailbox(ctx context.Context, messageIDs []imap.MessageID, mboxID imap.MailboxID) error
-	MoveMessages(ctx context.Context, messageIDs []imap.MessageID, mboxFromID, mboxToID imap.MailboxID) (bool, error)
-	MarkMessagesSeen(ctx context.Context, messageIDs []imap.MessageID, seen bool) error
-	MarkMessagesFlagged(ctx context.Context, messageIDs []imap.MessageID, flagged bool) error
-	GetUpdates() <-chan imap.Update
-	Close(ctx context.Context) error
-}
-type Sync interface {
-	Sync() // Periodic sync
-}
-
-type MailboxReadOps interface {
-	GetMailboxMessages()     // SELECT/EXAMINE
-	GetMailboxMessageCount() // STATUS
-}
-
-type MailboxWriteOps interface {
-	Expunge() // EXPUNGE
 }
 
 // Constructor
@@ -93,6 +47,7 @@ func (c *MyDatabaseConnector) Authorize(ctx context.Context, username string, pa
 		mailboxSize, usage        int
 		openPGPJSON, sysEmailJSON []byte
 	)
+
 	parts := strings.Split(username, "@")
 	row := c.db.QueryRowContext(ctx, queries.GetAuthUserQuery(), username, parts[1])
 
@@ -118,21 +73,21 @@ func (c *MyDatabaseConnector) Authorize(ctx context.Context, username string, pa
 		return false
 	}
 	// Unmarshal JSON columns
-	var openPGP OpenPGPKeys
+	var openPGP user_interfaces.OpenPGPKeys
 	if len(openPGPJSON) > 0 {
 		if err := json.Unmarshal(openPGPJSON, &openPGP); err != nil {
 			log.Printf("⚠️ Failed to parse OpenPGP JSON for %s: %v", username, err)
 		}
 	}
 
-	var sysEmail SystemEmail
+	var sysEmail user_interfaces.SystemEmail
 	if len(sysEmailJSON) > 0 {
 		if err := json.Unmarshal(sysEmailJSON, &sysEmail); err != nil {
 			log.Printf("⚠️ Failed to parse SystemEmail JSON for %s: %v", username, err)
 		}
 	}
 
-	user := &UserConfig{
+	user := &user_interfaces.UserConfig{
 		ID:          id,
 		Email:       username,
 		Hash:        hash,

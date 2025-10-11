@@ -8,13 +8,13 @@ import (
 )
 
 type AuthHandler struct {
-	service services.AuthService
+	service *services.ConcreteServices
 }
 
 // NewUserHandler creates a new instance of the UserHandler with the given
 // AuthService implementation. It takes an AuthService as a parameter and
 // returns a new instance of the UserHandler with the given service.
-func NewAuthHandler(service services.AuthService) *AuthHandler {
+func NewAuthHandler(service *services.ConcreteServices) *AuthHandler {
 	return &AuthHandler{service: service}
 }
 
@@ -26,7 +26,7 @@ func NewAuthHandler(service services.AuthService) *AuthHandler {
 func (h *AuthHandler) UserLogin(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	// password := r.FormValue("password")
-	user, err := h.service.GetUser(r.Context(), email)
+	user, err := h.service.Auth.GetUser(r.Context(), email)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

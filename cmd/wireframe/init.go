@@ -14,7 +14,7 @@ type AppWireframe struct {
 	Config     config.Config
 	DB         *plugins.DB
 	Repository *repository.Repository
-	Service    *services.Services
+	Service    *services.ConcreteServices
 	Handler    *handlers.Handlers
 }
 

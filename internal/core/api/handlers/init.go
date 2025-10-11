@@ -8,8 +8,8 @@ type Handlers struct {
 	AuthHandler *AuthHandler
 }
 
-func NewHandlers(svc *services.Services) *Handlers {
+func NewHandlers(svc *services.ConcreteServices) *Handlers {
 	return &Handlers{
-		AuthHandler: NewAuthHandler(svc.Auth),
+		AuthHandler: NewAuthHandler(svc),
 	}
 }

@@ -17,8 +17,6 @@ type APIServer struct {
 	limiter *rate.Limiter
 }
 
-// NewAPIServer creates a new API server instance, given a connector factory and an API key.
-// The API server is used to authenticate and authorize API requests.
 func NewAPIServer(cf *imap.ConnectorFactory, apiKey string) *APIServer {
 	return &APIServer{
 		cf:      cf,
@@ -42,7 +40,6 @@ func (api *APIServer) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	}
 }
-
 func (api *APIServer) rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !api.limiter.Allow() {

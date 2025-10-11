@@ -4,11 +4,12 @@ import (
 	"context"
 
 	"github.com/enjoys-in/airsend-imap/internal/core/api/repository"
+	"github.com/enjoys-in/airsend-imap/internal/interfaces"
 )
 
-type AuthService interface {
-	GetUser(ctx context.Context, email string) (*repository.User, error)
-}
+//	type AuthService interface {
+//		GetUser(ctx context.Context, email string) (*repository.User, error)
+//	}
 type authService struct {
 	repo repository.AuthRepository
 }
@@ -17,7 +18,7 @@ type authService struct {
 // UserService implementation. It takes a repository.AuthRepository as a
 // parameter and returns a new instance of the authService with the
 // given repository.
-func NewAuthService(repo repository.AuthRepository) AuthService {
+func NewAuthService(repo repository.AuthRepository) interfaces.AuthService {
 	return &authService{repo: repo}
 }
 
