@@ -16,7 +16,7 @@ import (
 // in parallel and gracefully shutting down on Ctrl+C or SIGTERM.
 func main() {
 	app := wireframe.InitWireframe()
-	defer app.Close()
+	defer app.DB.Close()
 
 	// Run IMAP and HTTP in parallel
 	go imap.RunImap(app)

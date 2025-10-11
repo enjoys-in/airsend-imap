@@ -3,6 +3,7 @@ package plugins
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	_ "github.com/lib/pq"
 )
@@ -32,5 +33,6 @@ func CreateDBConnection(host, port, user, password, dbname string, sslmode strin
 }
 
 func (d *DB) Close() error {
+	log.Printf("Database Connection has been Closed")
 	return d.Conn.Close()
 }

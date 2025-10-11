@@ -3,18 +3,18 @@ package imap
 import (
 	"context"
 	"crypto/tls"
-	"github.com/ProtonMail/gluon"
-	"github.com/ProtonMail/gluon/limits"
-	"github.com/enjoys-in/airsend-imap/cmd/wireframe"
-	"github.com/enjoys-in/airsend-imap/internal/imap"
-	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/ProtonMail/gluon"
+	"github.com/ProtonMail/gluon/limits"
+	"github.com/enjoys-in/airsend-imap/cmd/wireframe"
+	"github.com/enjoys-in/airsend-imap/internal/imap"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func RunImap(app *wireframe.AppWireframe) {
@@ -54,7 +54,7 @@ func RunImap(app *wireframe.AppWireframe) {
 	}()
 	factory := imap.NewConnectorFactory(app.DB.Conn, server)
 
-	gluonUserID, err := factory.GetOrCreateUser(ctx, "mygmailname", "12345678")
+	gluonUserID, err := factory.GetOrCreateUser(ctx, "mullayam06@airsend.in", "12345678")
 	if err != nil {
 		log.Fatalf("Failed to create user: %v", err)
 	}
