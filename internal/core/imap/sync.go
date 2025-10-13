@@ -2,16 +2,28 @@ package imap
 
 import (
 	"context"
-	"github.com/ProtonMail/gluon/imap"
+	"database/sql"
+	"encoding/json"
 	"log"
 	"time"
+
+	"github.com/ProtonMail/gluon/imap"
+	"github.com/enjoys-in/airsend-imap/internal/core/queries"
+)
+
+type MessagePriority string
+
+const (
+	PriorityHigh   MessagePriority = "high"
+	PriorityNormal MessagePriority = "normal"
+	PriorityLow    MessagePriority = "low"
 )
 
 // syncUserData loads mailboxes and messages from DB and pushes to Gluon
-func (c *MyDatabaseConnector) syncUserData(ctx context.Context) error {
+func (c *MyDatabaseConnector) syncUserDataAfterAuth(ctx context.Context) error {
 	// Load mailboxes
 	rows, err := c.db.QueryContext(ctx,
-		"SELECT id, name FROM mailboxes WHERE user_id = $1",
+		queries.GetMailboxOfUserQuery(),
 		c.user.Email,
 	)
 	if err != nil {
@@ -20,21 +32,19 @@ func (c *MyDatabaseConnector) syncUserData(ctx context.Context) error {
 	defer rows.Close()
 
 	for rows.Next() {
-		var mboxID, name string
-		if err := rows.Scan(&mboxID, &name); err != nil {
+		var id, title, path, delimiter, listed, subscribed string
+		var uid_validity uint32
+		if err := rows.Scan(&id, &title, &path, &delimiter, &listed, &subscribed, &uid_validity); err != nil {
 			continue
 		}
 
-		// Push mailbox to Gluon
-		c.updates <- &imap.MailboxCreated{
-			Mailbox: imap.Mailbox{
-				ID:   imap.MailboxID(mboxID),
-				Name: []string{name},
-			},
-		}
+		c.updates <- imap.NewMailboxCreated(imap.Mailbox{
+			ID:   imap.MailboxID(id),
+			Name: []string{title},
+		})
 
 		// Load messages for this mailbox
-		c.loadMailboxMessages(ctx, imap.MailboxID(mboxID))
+		c.loadMailboxMessages(ctx, imap.MailboxID(id))
 	}
 
 	return nil
@@ -42,59 +52,139 @@ func (c *MyDatabaseConnector) syncUserData(ctx context.Context) error {
 
 // loadMailboxMessages loads messages for a specific mailbox
 func (c *MyDatabaseConnector) loadMailboxMessages(ctx context.Context, mboxID imap.MailboxID) error {
+	log.Printf("Loading messages for mailbox %s", mboxID)
 	rows, err := c.db.QueryContext(ctx,
-		"SELECT id, seen, flagged, deleted, date FROM messages WHERE mailbox_id = $1 AND user_id = $2",
-		string(mboxID), c.user.Email,
+		queries.GetMailboxByIDQuery(),
+		string(mboxID), // folder id
+		c.user.Email,   // user email
 	)
 	if err != nil {
+		log.Printf("Failed to query messages: %v", err)
 		return err
 	}
 	defer rows.Close()
 
 	messages := []*imap.MessageCreated{}
-	for rows.Next() {
-		var msgID string
-		var seen, flagged, deleted bool
-		var date time.Time
-		var literal []byte
-		var mailboxIDs []imap.MailboxID
 
-		// Add literal and mailboxIDs to your scan
-		err := rows.Scan(&msgID, &seen, &flagged, &deleted, &date, &literal, &mailboxIDs)
+	for rows.Next() {
+		var (
+			messageID                                                      string
+			priority                                                       MessagePriority
+			isRead, isPinned, isReplied, isDeleted, isImportant, isStarred bool
+			threadID                                                       sql.NullString
+			tags                                                           []byte // JSON array
+			plainText                                                      sql.NullString
+			folder                                                         string
+			content                                                        []byte // Raw email content
+			timestamp                                                      time.Time
+			literal                                                        []byte
+		)
+
+		err := rows.Scan(
+			&messageID,
+			&priority,
+			&isRead,
+			&isPinned,
+			&isReplied,
+			&threadID,
+			&isDeleted,
+			&isImportant,
+			&isStarred,
+			&tags,
+			&plainText,
+			&folder,
+			&content,
+			&timestamp,
+		)
+
 		if err != nil {
-			// Handle error appropriately
+			log.Printf("Failed to scan message row: %v", err)
 			continue
 		}
 
+		// Build IMAP flags based on your database fields
 		flags := imap.NewFlagSet()
-		if seen {
+
+		// Standard IMAP flags
+		if isRead {
 			flags = flags.Add(imap.FlagSeen)
 		}
-		if flagged {
+		if isStarred {
 			flags = flags.Add(imap.FlagFlagged)
 		}
-		if deleted {
+		if isDeleted {
 			flags = flags.Add(imap.FlagDeleted)
 		}
-
-		messages = append(messages, &imap.MessageCreated{
-			Message: imap.Message{
-				ID:    imap.MessageID(msgID),
-				Flags: flags,
-				Date:  date,
-			},
-			Literal:    literal,
-			MailboxIDs: mailboxIDs,
-			// ParsedMessage: nil, // optional: populate if you have parsed message data
-		})
-	}
-
-	// Push messages to Gluon
-	if len(messages) > 0 {
-		c.updates <- &imap.MessagesCreated{
-			Messages: messages,
+		if isReplied {
+			flags = flags.Add(imap.FlagAnswered)
 		}
+
+		// Gmail/Outlook specific flags (as custom keywords)
+		// These appear as custom flags in IMAP clients
+		if isImportant {
+			flags = flags.Add("$Important")
+		}
+		if isPinned {
+			flags = flags.Add("$Pinned")
+		}
+
+		// Handle priority flags
+		switch priority {
+		case PriorityHigh:
+			flags = flags.Add("$HighPriority")
+		case PriorityLow:
+			flags = flags.Add("$LowPriority")
+		default:
+			flags = flags.Add("$NormalPriority")
+		}
+
+		// Parse and add custom tags as IMAP keywords
+		if len(tags) > 0 {
+			var tagList []string
+			if err := json.Unmarshal(tags, &tagList); err == nil {
+				for _, tag := range tagList {
+					// Add each tag as a custom keyword
+					// IMAP keywords should start with $ or be alphanumeric
+					flags = flags.Add(tag)
+				}
+			}
+		}
+
+		// Create IMAP message
+		// Decode First layer of MEssage base64 -> OpenPGP encrypted message -> Parse OpenPGP -> Extract inner MIME message
+		// parsed, err := imap.NewParsedMessage(content)
+		// if err != nil {
+		// 	// fallback: just send literal
+		// 	parsed = nil
+		// }
+
+		messages = append(messages,
+			&imap.MessageCreated{
+				Message: imap.Message{
+					ID:    imap.MessageID(messageID),
+					Flags: flags,
+					Date:  timestamp,
+				},
+				Literal:    literal,
+				MailboxIDs: []imap.MailboxID{mboxID},
+				// ParsedMessage: nil, // optional: populate if you have parsed message data
+			})
+
 	}
+
+	// Check for any row iteration errors
+	if err := rows.Err(); err != nil {
+		log.Printf("Error iterating rows: %v", err)
+		return err
+	}
+
+	// Push messages to Gluon in batches (avoid overwhelming the channel)
+
+	if len(messages) > 0 {
+		// Split into batches of 100 messages
+		c.updates <- imap.NewMessagesCreated(true, messages...)
+	}
+
 	return nil
 }
 

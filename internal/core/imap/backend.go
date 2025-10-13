@@ -13,18 +13,15 @@ import (
 	"github.com/ProtonMail/gluon/connector"
 	"github.com/ProtonMail/gluon/imap"
 	"github.com/enjoys-in/airsend-imap/internal/core/queries"
-	"github.com/enjoys-in/airsend-imap/internal/interfaces"
 	user_interfaces "github.com/enjoys-in/airsend-imap/internal/interfaces/user"
 	"github.com/enjoys-in/airsend-imap/internal/utils/encryption"
 )
 
 // MyDatabaseConnector implements the connector.Connector interface
 type MyDatabaseConnector struct {
-	db      *sql.DB
-	user    *user_interfaces.UserConfig
-	updates chan imap.Update
-	svc     *interfaces.Services
-
+	db                   *sql.DB
+	user                 *user_interfaces.UserConfig
+	updates              chan imap.Update
 	lastClientIMAPID     imap.IMAPID
 	allowUnknownMailbox  bool
 	folderPrefix         string
@@ -36,7 +33,7 @@ type MyDatabaseConnector struct {
 func NewMyDatabaseConnector(db *sql.DB) connector.Connector {
 	return &MyDatabaseConnector{
 		db:      db,
-		updates: make(chan imap.Update, 100),
+		updates: make(chan imap.Update, 1000),
 	}
 }
 
@@ -50,7 +47,6 @@ func (c *MyDatabaseConnector) Authorize(ctx context.Context, username string, pa
 
 	parts := strings.Split(username, "@")
 	row := c.db.QueryRowContext(ctx, queries.GetAuthUserQuery(), username, parts[1])
-
 	err := row.Scan(&id,
 		&hash,
 		&tenant,
@@ -65,11 +61,10 @@ func (c *MyDatabaseConnector) Authorize(ctx context.Context, username string, pa
 		return false
 	}
 
-	isMatch, err := encryption.ValidatePassword(hash, string(password))
+	isMatch := encryption.ValidatePassword(hash, string(password))
 
-	if err != nil || !isMatch {
+	if !isMatch {
 		log.Fatal("Password Mismatch", err)
-
 		return false
 	}
 	// Unmarshal JSON columns
@@ -99,12 +94,14 @@ func (c *MyDatabaseConnector) Authorize(ctx context.Context, username string, pa
 		SystemEmail: sysEmail,
 	}
 	c.user = user
+	go c.syncUserDataAfterAuth(context.Background())
 
 	return true
 }
 
 // CreateMailbox creates mailbox
 func (c *MyDatabaseConnector) CreateMailbox(ctx context.Context, name []string) (imap.Mailbox, error) {
+	fmt.Print("103")
 	mboxName := name[len(name)-1]
 	var mboxID string
 	err := c.db.QueryRowContext(ctx,
@@ -119,12 +116,14 @@ func (c *MyDatabaseConnector) CreateMailbox(ctx context.Context, name []string) 
 		ID:   imap.MailboxID(mboxID),
 		Name: name,
 	}
-	c.updates <- &imap.MailboxCreated{Mailbox: mbox}
+	c.updates <- imap.NewMailboxCreated(mbox)
 	return mbox, nil
 }
 
 // GetMessageLiteral fetches raw content
 func (c *MyDatabaseConnector) GetMessageLiteral(ctx context.Context, id imap.MessageID) ([]byte, error) {
+	fmt.Print("124")
+
 	var literal []byte
 	err := c.db.QueryRowContext(ctx, "SELECT raw_content FROM messages WHERE id=$1 AND user_id=$2",
 		string(id), c.user.Email).Scan(&literal)
@@ -133,6 +132,8 @@ func (c *MyDatabaseConnector) GetMessageLiteral(ctx context.Context, id imap.Mes
 
 // GetMailboxVisibility returns visibility
 func (c *MyDatabaseConnector) GetMailboxVisibility(ctx context.Context, mboxID imap.MailboxID) imap.MailboxVisibility {
+	fmt.Print("134")
+
 	return imap.Visible
 }
 
@@ -195,7 +196,6 @@ func (c *MyDatabaseConnector) MoveMessages(ctx context.Context, messageIDs []ima
 		return false, err
 	}
 	defer tx.Rollback()
-
 	for _, msgID := range messageIDs {
 		_, err := tx.ExecContext(ctx,
 			"UPDATE messages SET mailbox_id=$1 WHERE id=$2 AND mailbox_id=$3 AND user_id=$4",
@@ -238,7 +238,8 @@ func (c *MyDatabaseConnector) MarkMessagesFlagged(ctx context.Context, messageID
 
 // ListMailboxes lists all mailboxes for the authenticated user
 func (c *MyDatabaseConnector) ListMailboxes(ctx context.Context) ([]imap.Mailbox, error) {
-	rows, err := c.db.QueryContext(ctx, "SELECT id, name FROM mailboxes WHERE user_id=$1", c.user.Email)
+	fmt.Print("245")
+	rows, err := c.db.QueryContext(ctx, queries.GetMailboxOfUserQuery(), c.user.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -257,10 +258,13 @@ func (c *MyDatabaseConnector) ListMailboxes(ctx context.Context) ([]imap.Mailbox
 		mailboxes = append(mailboxes, mbox)
 	}
 	return mailboxes, nil
+
 }
 
 // ListMessages lists messages in a mailbox, optionally filtered by sequence numbers
 func (c *MyDatabaseConnector) ListMessages(ctx context.Context, mboxID imap.MailboxID, seqset *imap.SeqSet) ([]imap.Message, error) {
+	fmt.Print("265")
+
 	query := "SELECT id, seen, flagged, date FROM messages WHERE mailbox_id=$1 AND user_id=$2 ORDER BY date ASC"
 	rows, err := c.db.QueryContext(ctx, query, string(mboxID), c.user.Email)
 	if err != nil {
@@ -345,12 +349,10 @@ func (c *MyDatabaseConnector) Close(ctx context.Context) error {
 // Triggered by: SELECT or EXAMINE commands
 func (c *MyDatabaseConnector) GetMailboxMessages(ctx context.Context, mboxID imap.MailboxID) ([]imap.Message, error) {
 	log.Printf("GetMailboxMessages: Fetching messages for mailbox %s", mboxID)
+	fmt.Print("351")
 
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT id, seen, flagged, deleted, date 
-		FROM messages 
-		WHERE mailbox_id = $1 AND user_id = $2 
-		ORDER BY date ASC`,
+		queries.GetMailboxByIDQuery(),
 		string(mboxID), c.user.Email,
 	)
 	if err != nil {
@@ -595,30 +597,29 @@ func (c *MyDatabaseConnector) GetMessageLabels(ctx context.Context, messageID im
 // For handling UID validity changes
 // ============================================================
 
-// // BumpUIDValidity increments the UID validity for a mailbox
-// // Called when mailbox structure changes dramatically (like rebuild)
-// // Triggered by: Manual operations or mailbox repairs
-// func (c *MyDatabaseConnector) BumpUIDValidity(ctx context.Context, mboxID imap.MailboxID) error {
-// 	log.Printf("BumpUIDValidity: Bumping UID validity for mailbox %s", mboxID)
+// BumpUIDValidity increments the UID validity for a mailbox
+// Called when mailbox structure changes dramatically (like rebuild)
+// Triggered by: Manual operations or mailbox repairs
+func (c *MyDatabaseConnector) BumpUIDValidity(ctx context.Context, mboxID imap.MailboxID) error {
+	log.Printf("BumpUIDValidity: Bumping UID validity for mailbox %s", mboxID)
 
-// 	// Update UID validity in database
-// 	_, err := c.db.ExecContext(ctx,
-// 		"UPDATE mailboxes SET uid_validity = uid_validity + 1 WHERE id = $1 AND user_id = $2",
-// 		string(mboxID), c.user.Email,
-// 	)
-// 	if err != nil {
-// 		log.Printf("BumpUIDValidity: Failed to bump UID validity: %v", err)
-// 		return err
-// 	}
+	// Update UID validity in database
+	_, err := c.db.ExecContext(ctx,
+		"UPDATE public.mail_folders SET uid_validity = uid_validity + 1 WHERE id = $1 AND user_id = $2",
+		string(mboxID), c.user.Email,
+	)
+	if err != nil {
+		log.Printf("BumpUIDValidity: Failed to bump UID validity: %v", err)
+		return err
+	}
 
-// 	// Notify Gluon
-// 	c.updates <- &imap.UIDValidityBumped{
-// 		MailboxID: mboxID,
-// 	}
+	// Notify Gluon
+	//uid := uint32(rand.Intn(999999-100000+1) + 100000)
+	c.updates <- imap.NewUIDValidityBumped()
 
-// 	log.Printf("BumpUIDValidity: Successfully bumped UID validity for mailbox %s", mboxID)
-// 	return nil
-// }
+	log.Printf("BumpUIDValidity: Successfully bumped UID validity for mailbox %s", mboxID)
+	return nil
+}
 
 // ============================================================
 // 3. IMAP ID INTERFACE

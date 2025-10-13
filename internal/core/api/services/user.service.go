@@ -7,17 +7,17 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/enjoys-in/airsend-imap/internal/core/imap"
+	"github.com/enjoys-in/airsend-imap/internal/core/imap/connector"
 	"golang.org/x/time/rate"
 )
 
 type APIServer struct {
-	cf      *imap.ConnectorFactory
+	cf      *connector.ConnectorFactory
 	apiKey  string // Simple API key for authentication
 	limiter *rate.Limiter
 }
 
-func NewAPIServer(cf *imap.ConnectorFactory, apiKey string) *APIServer {
+func NewAPIServer(cf *connector.ConnectorFactory, apiKey string) *APIServer {
 	return &APIServer{
 		cf:      cf,
 		apiKey:  apiKey,

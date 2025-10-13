@@ -14,12 +14,14 @@ import (
 	"github.com/ProtonMail/gluon/limits"
 	"github.com/enjoys-in/airsend-imap/cmd/wireframe"
 	"github.com/enjoys-in/airsend-imap/internal/core/imap"
+	"github.com/enjoys-in/airsend-imap/internal/core/imap/connector"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func RunImap(app *wireframe.AppWireframe) {
 	log.Println("🧩 Starting IMAP server...")
 
+	// Load TLS configuration
 	tlsConfig, err := app.Config.LoadTLS()
 	if err != nil {
 		log.Printf("❌ Failed to load TLS certs: %v", err)
@@ -28,11 +30,14 @@ func RunImap(app *wireframe.AppWireframe) {
 	// Initialize Gluon with your store
 	dataDir := "./data/gluon_data" // Cache directory
 	dbPath := "./data/gluon_state"
+	builder := imap.NewPGStoreBuilder(app.DB.Conn)
+
 	server, err := gluon.New(
 		gluon.WithTLS(tlsConfig),
 		gluon.WithIMAPLimits(limits.IMAP{}),
 		gluon.WithDataDir(dataDir),
 		gluon.WithDatabaseDir(dbPath),
+		gluon.WithStoreBuilder(builder),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -52,7 +57,7 @@ func RunImap(app *wireframe.AppWireframe) {
 		log.Println("Stopping IMAP server gracefully...")
 		cancel()
 	}()
-	factory := imap.NewConnectorFactory(app.DB.Conn, server)
+	factory := connector.NewConnectorFactory(app.DB.Conn, server)
 
 	gluonUserID, err := factory.GetOrCreateUser(ctx, "mullayam06@airsend.in", "12345678")
 	if err != nil {

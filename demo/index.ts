@@ -12,12 +12,16 @@ var imap = new Imap({
 
 });
 imap.once('ready', function () {
-  imap.openBox('INBOX', false, function (err, box) {
+  imap.getBoxes(function (err, boxes) {
     if (err) throw err;
-    var f = box.messages.total;
-    console.log(f + ' messages');
-    imap.end();
+    console.log("Boxes:", boxes);
+      imap.openBox('INBOX', false, function (err, box) {
+    if (err) throw err;
+    console.log("Opened box:", box);
+    // imap.end();
   });
+  });
+
 });
 
 imap.once('error', function (err) {

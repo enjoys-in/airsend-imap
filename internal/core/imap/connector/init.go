@@ -1,4 +1,4 @@
-package imap
+package connector
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/ProtonMail/gluon"
+	"github.com/enjoys-in/airsend-imap/internal/core/imap"
 	"golang.org/x/time/rate"
 
 	"sync"
@@ -51,7 +52,6 @@ func (cf *ConnectorFactory) GetOrCreateUser(ctx context.Context, email string, p
 		return gluonUserID, nil
 	}
 	cf.mu.RUnlock()
-
 	cf.mu.Lock()
 	defer cf.mu.Unlock()
 
@@ -61,7 +61,7 @@ func (cf *ConnectorFactory) GetOrCreateUser(ctx context.Context, email string, p
 	}
 
 	// Create new connector for this user
-	userConnector := NewMyDatabaseConnector(cf.db)
+	userConnector := imap.NewMyDatabaseConnector(cf.db)
 
 	// Add user to Gluon
 	gluonUserID, err := cf.server.AddUser(ctx, userConnector, []byte(password))
