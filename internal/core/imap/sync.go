@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/ProtonMail/gluon/imap"
@@ -41,6 +42,27 @@ func (c *MyDatabaseConnector) syncUserDataAfterAuth(ctx context.Context) error {
 		c.updates <- imap.NewMailboxCreated(imap.Mailbox{
 			ID:   imap.MailboxID(id),
 			Name: []string{title},
+			Flags: imap.NewFlagSet(
+				imap.FlagSeen,
+				imap.FlagAnswered,
+				imap.FlagFlagged,
+				imap.FlagDeleted,
+				imap.FlagDraft,
+				"$Important",
+				"$Pinned",
+				"$Archived",
+			),
+			PermanentFlags: imap.NewFlagSet(
+				imap.FlagSeen,
+				imap.FlagAnswered,
+				imap.FlagFlagged,
+				imap.FlagDeleted,
+				imap.FlagDraft,
+				"$Important",
+				"$Pinned",
+				"$Archived",
+			),
+			Attributes: getMailboxAttributes(title, false /* hasChildren */),
 		})
 
 		// Load messages for this mailbox
@@ -48,6 +70,31 @@ func (c *MyDatabaseConnector) syncUserDataAfterAuth(ctx context.Context) error {
 	}
 
 	return nil
+}
+func getMailboxAttributes(mailboxName string, hasChildren bool) imap.FlagSet {
+	attrs := imap.NewFlagSet()
+	if hasChildren {
+		attrs.AddToSelf(imap.AttrNoInferiors)
+	}
+	// Add special-use attributes based on mailbox name
+	switch strings.ToLower(mailboxName) {
+	case "sent":
+		attrs = imap.NewFlagSet(imap.AttrSent)
+	case "drafts":
+		attrs = imap.NewFlagSet(imap.AttrDrafts)
+	case "trash", "deleted":
+		attrs = imap.NewFlagSet(imap.AttrTrash)
+	case "spam", "junk":
+		attrs = imap.NewFlagSet(imap.AttrJunk)
+	case "archive":
+		attrs = imap.NewFlagSet(imap.AttrArchive)
+	case "important":
+		attrs = imap.NewFlagSet(imap.AttrMarked)
+	case "inbox", "all":
+		attrs = imap.NewFlagSet(imap.AttrNoSelect)
+	}
+
+	return attrs
 }
 
 // loadMailboxMessages loads messages for a specific mailbox

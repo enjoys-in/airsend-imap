@@ -29,6 +29,8 @@ func (b *PGStoreBuilder) New(dir, userID string, passphrase []byte) (store.Store
 
 // Delete cleans up mail for a given user
 func (b *PGStoreBuilder) Delete(dir, userID string) error {
+	fmt.Println("32")
+
 	_, err := b.db.Exec(`DELETE FROM mails_data WHERE email = $1`, userID)
 	return err
 }
@@ -47,8 +49,11 @@ type PGMailStore struct {
 
 // List returns all message IDs for this user
 func (s *PGMailStore) List() ([]imap.InternalMessageID, error) {
+	fmt.Println("52")
+
 	rows, err := s.db.Query(`SELECT message_id FROM mails_data WHERE email = $1`, s.userID)
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -59,7 +64,6 @@ func (s *PGMailStore) List() ([]imap.InternalMessageID, error) {
 		if err := rows.Scan(&mid); err != nil {
 			return nil, err
 		}
-
 		ids = append(ids, imap.NewInternalMessageID())
 	}
 	return ids, nil
@@ -67,6 +71,7 @@ func (s *PGMailStore) List() ([]imap.InternalMessageID, error) {
 
 // Get retrieves raw message data by ID
 func (s *PGMailStore) Get(messageID imap.InternalMessageID) ([]byte, error) {
+	fmt.Println("74")
 	var raw []byte
 	err := s.db.QueryRow(`SELECT content FROM mails_data WHERE email = $1 AND message_id = $2`, s.userID, messageID).Scan(&raw)
 	if err == sql.ErrNoRows {
@@ -77,6 +82,8 @@ func (s *PGMailStore) Get(messageID imap.InternalMessageID) ([]byte, error) {
 
 // Set stores or updates a message
 func (s *PGMailStore) Set(messageID imap.InternalMessageID, reader io.Reader) error {
+	fmt.Println("85")
+
 	raw, err := io.ReadAll(reader)
 	if err != nil {
 		return err
@@ -94,6 +101,8 @@ func (s *PGMailStore) Set(messageID imap.InternalMessageID, reader io.Reader) er
 
 // Delete removes messages by ID
 func (s *PGMailStore) Delete(messageIDs ...imap.InternalMessageID) error {
+	fmt.Println("104")
+
 	for _, mid := range messageIDs {
 		if _, err := s.db.Exec(`DELETE FROM mails_data WHERE email = $1 AND message_id = $2`, s.userID, mid); err != nil {
 			return err
