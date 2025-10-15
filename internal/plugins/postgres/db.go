@@ -28,7 +28,7 @@ func CreateDBConnection(host, port, user, password, dbname string, sslmode strin
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
-
+	log.Println("✅ DB connected")
 	return &DB{Conn: db}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -20,12 +21,25 @@ const (
 	PriorityLow    MessagePriority = "low"
 )
 
+func (conn *MyDatabaseConnector) popUpdates() []imap.Update {
+	conn.queueLock.Lock()
+	defer conn.queueLock.Unlock()
+
+	var updates []imap.Update
+
+	updates, conn.queue = conn.queue, []imap.Update{}
+
+	return updates
+}
+
 // syncUserData loads mailboxes and messages from DB and pushes to Gluon
 func (c *MyDatabaseConnector) syncUserDataAfterAuth(ctx context.Context) error {
-	// Load mailboxes
-	rows, err := c.db.QueryContext(ctx,
+	c.queueLock.Lock()
+	defer c.queueLock.Unlock()
+
+	rows, err := c.DB.QueryContext(ctx,
 		queries.GetMailboxOfUserQuery(),
-		c.user.Email,
+		c.Email,
 	)
 	if err != nil {
 		return err
@@ -38,32 +52,25 @@ func (c *MyDatabaseConnector) syncUserDataAfterAuth(ctx context.Context) error {
 		if err := rows.Scan(&id, &title, &path, &delimiter, &listed, &subscribed, &uid_validity); err != nil {
 			continue
 		}
+		exclusive, err := c.validateName([]string{title})
+		if err != nil {
+			return err
+		}
 
-		c.updates <- imap.NewMailboxCreated(imap.Mailbox{
-			ID:   imap.MailboxID(id),
-			Name: []string{title},
-			Flags: imap.NewFlagSet(
-				imap.FlagSeen,
-				imap.FlagAnswered,
-				imap.FlagFlagged,
-				imap.FlagDeleted,
-				imap.FlagDraft,
-				"$Important",
-				"$Pinned",
-				"$Archived",
-			),
-			PermanentFlags: imap.NewFlagSet(
-				imap.FlagSeen,
-				imap.FlagAnswered,
-				imap.FlagFlagged,
-				imap.FlagDeleted,
-				imap.FlagDraft,
-				"$Important",
-				"$Pinned",
-				"$Archived",
-			),
-			Attributes: getMailboxAttributes(title, false /* hasChildren */),
-		})
+		mbox := c.state.createMailbox(imap.MailboxID(id), []string{title}, exclusive)
+		update := imap.NewMailboxCreated(mbox)
+
+		c.state.mailboxes[imap.MailboxID(id)] = &MailboxOptions{
+			name:      []string{title},
+			exclusive: exclusive,
+			id:        imap.MailboxID(id),
+		}
+
+		c.Updates <- update
+		err, ok := update.WaitContext(ctx)
+		if ok && err != nil {
+			return fmt.Errorf("failed to apply update %v:%w", update.String(), err)
+		}
 
 		// Load messages for this mailbox
 		c.loadMailboxMessages(ctx, imap.MailboxID(id))
@@ -100,10 +107,10 @@ func getMailboxAttributes(mailboxName string, hasChildren bool) imap.FlagSet {
 // loadMailboxMessages loads messages for a specific mailbox
 func (c *MyDatabaseConnector) loadMailboxMessages(ctx context.Context, mboxID imap.MailboxID) error {
 	log.Printf("Loading messages for mailbox %s", mboxID)
-	rows, err := c.db.QueryContext(ctx,
+	rows, err := c.DB.QueryContext(ctx,
 		queries.GetMailboxByIDQuery(),
 		string(mboxID), // folder id
-		c.user.Email,   // user email
+		c.Email,        // user email
 	)
 	if err != nil {
 		log.Printf("Failed to query messages: %v", err)
@@ -229,7 +236,7 @@ func (c *MyDatabaseConnector) loadMailboxMessages(ctx context.Context, mboxID im
 
 	if len(messages) > 0 {
 		// Split into batches of 100 messages
-		c.updates <- imap.NewMessagesCreated(true, messages...)
+		c.Updates <- imap.NewMessagesCreated(true, messages...)
 	}
 
 	return nil
@@ -239,145 +246,52 @@ func (c *MyDatabaseConnector) loadMailboxMessages(ctx context.Context, mboxID im
 // Called by Gluon to refresh mailbox and message state
 // Triggered by: Periodic refresh, or when Gluon needs fresh data
 func (c *MyDatabaseConnector) Sync(ctx context.Context) error {
-	log.Printf("SYNC: Starting sync for user %s", c.user.Email)
-
-	// Step 1: Sync mailboxes
-	if err := c.syncMailboxes(ctx); err != nil {
+	log.Printf("SYNC: Starting sync for user %s", c.Email)
+	if err := c.syncUserDataAfterAuth(ctx); err != nil {
 		log.Printf("SYNC: Failed to sync mailboxes: %v", err)
 		return err
 	}
-
-	// Step 2: Sync messages for all mailboxes
-	if err := c.syncAllMessages(ctx); err != nil {
-		log.Printf("SYNC: Failed to sync messages: %v", err)
-		return err
-	}
-
-	log.Printf("SYNC: Completed sync for user %s", c.user.Email)
+	log.Printf("SYNC: Completed sync for user %s", c.Email)
 	return nil
 }
 
-// syncMailboxes loads mailboxes from database and pushes to Gluon
-func (c *MyDatabaseConnector) syncMailboxes(ctx context.Context) error {
-	rows, err := c.db.QueryContext(ctx,
-		"SELECT id, name FROM mailboxes WHERE user_id = $1 ORDER BY name",
-		c.user.Email,
-	)
-	if err != nil {
-		return err
+func (c *MyDatabaseConnector) DebugPrint(label string) {
+	fmt.Printf("%s:\n", label)
+	fmt.Printf("  connector ptr: %p\n", c)
+	fmt.Printf("  c == nil: %v\n", c == nil)
+
+	if c != nil {
+		fmt.Printf("  db: %p (nil=%v)\n", c.DB, c.DB == nil)
+		fmt.Printf("  updates: %p (nil=%v)\n", c.Updates, c.Updates == nil)
+		fmt.Printf("  email: %s\n", c.Email)
 	}
-	defer rows.Close()
-
-	mailboxCount := 0
-	for rows.Next() {
-		var mboxID, name string
-		if err := rows.Scan(&mboxID, &name); err != nil {
-			log.Printf("SYNC: Failed to scan mailbox: %v", err)
-			continue
-		}
-
-		// Push mailbox to Gluon via updates channel
-		c.updates <- &imap.MailboxCreated{
-			Mailbox: imap.Mailbox{
-				ID:   imap.MailboxID(mboxID),
-				Name: []string{name},
-			},
-		}
-		mailboxCount++
-	}
-
-	log.Printf("SYNC: Synced %d mailboxes", mailboxCount)
-	return nil
 }
+func (conn *MyDatabaseConnector) validateName(name []string) (bool, error) {
+	var exclusive bool
 
-// syncAllMessages loads all messages and pushes to Gluon
-func (c *MyDatabaseConnector) syncAllMessages(ctx context.Context) error {
-	// Get all mailboxes first
-	rows, err := c.db.QueryContext(ctx,
-		"SELECT id FROM mailboxes WHERE user_id = $1",
-		c.user.Email,
-	)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
+	switch {
+	case len(conn.FolderPrefix)+len(conn.LabelsPrefix) == 0:
+		exclusive = false
 
-	mailboxIDs := []string{}
-	for rows.Next() {
-		var mboxID string
-		if err := rows.Scan(&mboxID); err != nil {
-			continue
-		}
-		mailboxIDs = append(mailboxIDs, mboxID)
-	}
-
-	// Sync messages for each mailbox
-	totalMessages := 0
-	for _, mboxID := range mailboxIDs {
-		count, err := c.syncMessagesForMailbox(ctx, imap.MailboxID(mboxID))
-		if err != nil {
-			log.Printf("SYNC: Failed to sync messages for mailbox %s: %v", mboxID, err)
-			continue
-		}
-		totalMessages += count
-	}
-
-	log.Printf("SYNC: Synced %d total messages across %d mailboxes", totalMessages, len(mailboxIDs))
-	return nil
-}
-
-// syncMessagesForMailbox syncs messages for a specific mailbox
-func (c *MyDatabaseConnector) syncMessagesForMailbox(ctx context.Context, mboxID imap.MailboxID) (int, error) {
-	rows, err := c.db.QueryContext(ctx,
-		`SELECT id, seen, flagged, deleted, date 
-		FROM messages 
-		WHERE mailbox_id = $1 AND user_id = $2 
-		ORDER BY date ASC`,
-		string(mboxID), c.user.Email,
-	)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-
-	messages := []*imap.MessageCreated{}
-	for rows.Next() {
-		var msgID string
-		var seen, flagged, deleted bool
-		var date time.Time
-
-		if err := rows.Scan(&msgID, &seen, &flagged, &deleted, &date); err != nil {
-			log.Printf("SYNC: Failed to scan message: %v", err)
-			continue
+	case len(conn.FolderPrefix) > 0 && len(conn.LabelsPrefix) > 0:
+		if name[0] == conn.FolderPrefix {
+			exclusive = true
+		} else if name[0] == conn.LabelsPrefix {
+			exclusive = false
+		} else {
+			return false, ErrInvalidPrefix
 		}
 
-		// Build flags
-		flags := imap.NewFlagSet()
-		if seen {
-			flags = flags.Add(imap.FlagSeen)
-		}
-		if flagged {
-			flags = flags.Add(imap.FlagFlagged)
-		}
-		if deleted {
-			flags = flags.Add(imap.FlagDeleted)
+	case len(conn.FolderPrefix) > 0:
+		if len(name) > 1 && name[0] == conn.FolderPrefix {
+			exclusive = true
 		}
 
-		messages = append(messages, &imap.MessageCreated{
-			Message: imap.Message{
-				ID:    imap.MessageID(msgID),
-				Flags: flags,
-				Date:  date,
-			},
-		})
-	}
-
-	// Push messages to Gluon
-	if len(messages) > 0 {
-		c.updates <- &imap.MessagesCreated{
-			Messages: messages,
+	case len(conn.LabelsPrefix) > 0:
+		if len(name) > 1 && name[0] == conn.LabelsPrefix {
+			exclusive = false
 		}
 	}
 
-	return len(messages), nil
+	return exclusive, nil
 }

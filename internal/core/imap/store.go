@@ -50,8 +50,11 @@ type PGMailStore struct {
 // List returns all message IDs for this user
 func (s *PGMailStore) List() ([]imap.InternalMessageID, error) {
 	fmt.Println("52")
-
-	rows, err := s.db.Query(`SELECT message_id FROM mails_data WHERE email = $1`, s.userID)
+	rows, err := s.db.Query(`SELECT m.message_id
+FROM mails_data AS m
+JOIN mail_accounts AS a ON m.email = a.email
+WHERE a.gluon_id = $1 LIMIT 100;
+`, s.userID)
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
@@ -115,3 +118,18 @@ func (s *PGMailStore) Delete(messageIDs ...imap.InternalMessageID) error {
 func (s *PGMailStore) Close() error {
 	return nil
 }
+
+// ──────────────────────────────────────────────────────────────
+//   FALLBACK V0 STORE IMPLEMENTATION (for reference, not used) Disk Store
+// ──────────────────────────────────────────────────────────────
+// func (*storeBuilder) New(path, userID string, passphrase []byte) (store.Store, error) {
+// 	return store.NewOnDiskStore(
+// 		filepath.Join(path, userID),
+// 		passphrase,
+// 		store.WithFallback(fallback_v0.NewOnDiskStoreV0WithCompressor(&fallback_v0.GZipCompressor{})),
+// 	)
+// }
+
+// func (*storeBuilder) Delete(path, userID string) error {
+// 	return os.RemoveAll(filepath.Join(path, userID))
+// }

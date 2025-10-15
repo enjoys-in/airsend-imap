@@ -28,9 +28,6 @@ func InitWireframe() *AppWireframe {
 	if err != nil {
 		log.Fatal("❌ Failed to connect DB:", err)
 	}
-	// defer db.Close()
-
-	log.Println("✅ DB connected")
 
 	repo := repository.NewRepository(db)
 	svc := services.NewServices(repo)

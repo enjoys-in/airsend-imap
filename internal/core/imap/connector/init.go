@@ -49,7 +49,6 @@ func NewConnectorFactory(db *sql.DB, server *gluon.Server) *ConnectorFactory {
 
 // GetOrCreateUser returns the Gluon user ID for an email, creating if needed
 func (cf *ConnectorFactory) GetOrCreateUser(ctx context.Context, email string, password string) (string, error) {
-
 	// Create new connector for this user
 	gluonID, err := cf.LoadGluonIdFromDB(ctx, email)
 
@@ -59,12 +58,12 @@ func (cf *ConnectorFactory) GetOrCreateUser(ctx context.Context, email string, p
 		}
 	}
 
-	userConnector := imap.NewMyDatabaseConnector(cf.db)
+	userConnector := imap.NewMyDatabaseConnector(cf.db, email)
+
 	// If gluonID exists, try loading user into Gluon
 	if gluonID != "" {
 		if exists, err := cf.server.LoadUser(ctx, userConnector, gluonID, []byte(password)); err == nil && !exists {
 			log.Printf("✅ Loaded existing Gluon user: %s (%s)", email, gluonID)
-			return gluonID, nil
 		}
 	} else {
 		// Add user to Gluon
@@ -80,6 +79,9 @@ func (cf *ConnectorFactory) GetOrCreateUser(ctx context.Context, email string, p
 		log.Printf("Dynamically added user: %s (Gluon ID: %s)", email, gluonUserID)
 	}
 
+	if err := userConnector.Sync(ctx); err != nil {
+		return "", fmt.Errorf("failed to sync user %s: %w", email, err)
+	}
 	return gluonID, nil
 }
 
