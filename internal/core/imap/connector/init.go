@@ -3,14 +3,19 @@ package connector
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"log"
+	"strings"
 	"sync"
 
 	"time"
 
 	"github.com/ProtonMail/gluon/connector"
 	"github.com/ProtonMail/gluon/imap"
+	"github.com/enjoys-in/airsend-imap/internal/core/queries"
 	user "github.com/enjoys-in/airsend-imap/internal/interfaces/user"
+	"github.com/enjoys-in/airsend-imap/internal/utils/encryption"
 )
 
 var (
@@ -21,29 +26,44 @@ var (
 	ErrRenameForbidden = errors.New("rename operation is not allowed")
 	ErrDeleteForbidden = errors.New("delete operation is not allowed")
 )
+var defaultFlags imap.FlagSet = imap.NewFlagSet(
+	imap.FlagSeen,
+	imap.FlagAnswered,
+	imap.FlagFlagged,
+	imap.FlagDeleted,
+	imap.FlagDraft,
+	"$Important",
+	"$Pinned",
+	"$Archived",
+)
 
 type MyDBConnector struct {
 	db                         *sql.DB
 	email                      string
 	updates                    chan imap.Update
 	state                      *MailboxState
-	User                       *user.UserConfig
-	Updates                    chan imap.Update
-	LastClientIMAPID           imap.IMAPID
-	AllowUnknownMailbox        bool
-	FolderPrefix, LabelsPrefix string
-	UpdatesAllowedToFail       int32
-
-	queueLock           sync.Mutex
-	queue               []imap.Update
-	MailboxVisibilities map[imap.MailboxID]imap.MailboxVisibility
+	user                       *user.UserConfig
+	lastClientIMAPID           imap.IMAPID
+	allowUnknownMailbox        bool
+	folderPrefix, labelsPrefix string
+	updatesAllowedToFail       int32
+	queueLock                  sync.Mutex
+	queue                      []imap.Update
+	mailboxVisibilities        map[imap.MailboxID]imap.MailboxVisibility
 }
 
 func NewConnector(db *sql.DB, email string) *MyDBConnector {
 	return &MyDBConnector{
-		db:      db,
-		email:   email,
-		updates: make(chan imap.Update, 100),
+		db:                  db,
+		email:               email,
+		updates:             make(chan imap.Update, 100),
+		state:               newMailboxState(defaultFlags, defaultFlags, imap.FlagSet{}),
+		user:                nil,
+		lastClientIMAPID:    imap.NewIMAPID(),
+		allowUnknownMailbox: true,
+		folderPrefix:        "",
+		labelsPrefix:        "",
+		mailboxVisibilities: make(map[imap.MailboxID]imap.MailboxVisibility),
 	}
 }
 
@@ -51,6 +71,62 @@ func (c *MyDBConnector) Init(ctx context.Context, cache connector.IMAPState) err
 
 // Authorize returns whether the given username/password combination are valid for this connector.
 func (c *MyDBConnector) Authorize(ctx context.Context, username string, password []byte) bool {
+	var (
+		id, hash, tenant, key     string
+		mailboxSize, usage        int
+		openPGPJSON, sysEmailJSON []byte
+	)
+
+	parts := strings.Split(username, "@")
+	row := c.db.QueryRowContext(ctx, queries.GetAuthUserQuery(), username, parts[1])
+	err := row.Scan(&id,
+		&hash,
+		&tenant,
+		&mailboxSize,
+		&usage,
+		&key,
+		&openPGPJSON,
+		&sysEmailJSON)
+
+	if err != nil {
+		log.Print("Scanning Rows", err)
+		return false
+	}
+
+	isMatch := encryption.ValidatePassword(hash, string(password))
+
+	if !isMatch {
+		log.Print("Password Mismatch", err)
+		return false
+	}
+	// Unmarshal JSON columns
+	var openPGP user.OpenPGPKeys
+	if len(openPGPJSON) > 0 {
+		if err := json.Unmarshal(openPGPJSON, &openPGP); err != nil {
+			log.Printf("⚠️ Failed to parse OpenPGP JSON for %s: %v", username, err)
+		}
+	}
+
+	var sysEmail user.SystemEmail
+	if len(sysEmailJSON) > 0 {
+		if err := json.Unmarshal(sysEmailJSON, &sysEmail); err != nil {
+			log.Printf("⚠️ Failed to parse SystemEmail JSON for %s: %v", username, err)
+		}
+	}
+
+	user := &user.UserConfig{
+		ID:          id,
+		Email:       username,
+		Hash:        hash,
+		TenantName:  tenant,
+		MailboxSize: mailboxSize,
+		Usage:       usage,
+		Key:         key,
+		OpenPGP:     openPGP,
+		SystemEmail: sysEmail,
+	}
+	c.user = user
+
 	return true
 }
 

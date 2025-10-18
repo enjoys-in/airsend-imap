@@ -11,21 +11,21 @@ import (
 
 // PushMailboxCreated notifies Gluon about new mailbox
 func (c *MyDBConnector) PushMailboxCreated(mbox imap.Mailbox) {
-	c.Updates <- &imap.MailboxCreated{
+	c.updates <- &imap.MailboxCreated{
 		Mailbox: mbox,
 	}
 }
 
 // PushMailboxDeleted notifies Gluon about deleted mailbox
 func (c *MyDBConnector) PushMailboxDeleted(mboxID imap.MailboxID) {
-	c.Updates <- &imap.MailboxDeleted{
+	c.updates <- &imap.MailboxDeleted{
 		MailboxID: mboxID,
 	}
 }
 
 // // PushMailboxRenamed notifies Gluon about renamed mailbox
 // func (c *MyDBConnector) PushMailboxRenamed(mboxID imap.MailboxID, newName []string) {
-// 	c.Updates <- &imap.MailboxRenamed{
+// 	c.updates <- &imap.MailboxRenamed{
 // 		MailboxID: mboxID,
 // 		NewName:   newName,
 // 	}
@@ -34,21 +34,21 @@ func (c *MyDBConnector) PushMailboxDeleted(mboxID imap.MailboxID) {
 
 // PushMessagesCreated notifies Gluon about new messages
 // func (c *MyDBConnector) PushMessagesCreated(messages []imap.Message) {
-// 	c.Updates <- &imap.MessagesCreated{
+// 	c.updates <- &imap.MessagesCreated{
 // 		Messages: messages,
 // 	}
 // }
 
 // PushMessageDeleted notifies Gluon about deleted message
 func (c *MyDBConnector) PushMessageDeleted(messageID imap.MessageID) {
-	c.Updates <- &imap.MessageDeleted{
+	c.updates <- &imap.MessageDeleted{
 		MessageID: messageID,
 	}
 }
 
 // PushMessageFlagsChanged notifies Gluon about flag changes
 // func (c *MyDBConnector) PushMessageFlagsChanged(messageID imap.MessageID, flags imap.FlagSet) {
-// 	c.Updates <- &imap.MessageFlagsChanged{
+// 	c.updates <- &imap.MessageFlagsChanged{
 // 		MessageID: messageID,
 // 		Flags:     flags,
 // 	}
@@ -56,7 +56,7 @@ func (c *MyDBConnector) PushMessageDeleted(messageID imap.MessageID) {
 
 // // PushMessageMoved notifies Gluon about moved message
 // func (c *MyDBConnector) PushMessageMoved(messageID imap.MessageID, fromMbox, toMbox imap.MailboxID) {
-// 	c.Updates <- &imap.MessageMoved{
+// 	c.updates <- &imap.MessageMoved{
 // 		MessageID:     messageID,
 // 		FromMailboxID: fromMbox,
 // 		ToMailboxID:   toMbox,

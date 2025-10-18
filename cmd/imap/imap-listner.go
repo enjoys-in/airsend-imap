@@ -48,8 +48,9 @@ func RunImap(app *wireframe.AppWireframe) {
 	tlsConfig, err := app.Config.LoadTLS()
 	if err != nil {
 		log.Printf("❌ Failed to load TLS certs: %v", err)
-		return
+
 	}
+
 	// Initialize Gluon with your store
 	dataDir := "./data/gluon_data" // Cache directory
 	dbPath := "./data/gluon_state"
@@ -128,7 +129,18 @@ func RunImap(app *wireframe.AppWireframe) {
 	if err := server.Serve(ctx, listener); err != nil {
 		logrus.WithError(err).Fatal("Failed to serve")
 	}
+	// === Start IMAPS (TLS) on Port 993 ===
+	tlsListener, err := tls.Listen("tcp", "0.0.0.0:993", tlsConfig)
+	if err != nil {
+		log.Printf("❌ Failed to listen on IMAPS (993): %v", err)
+		return
+	}
 
+	log.Println("🔒 IMAPS (TLS) server listening on 0.0.0.0:993")
+
+	if err := server.Serve(ctx, tlsListener); err != nil && err != context.Canceled {
+		log.Printf("❌ IMAPS server error: %v", err)
+	}
 	for err := range server.GetErrorCh() {
 		logrus.WithError(err).Error("Error while serving")
 	}
@@ -136,19 +148,5 @@ func RunImap(app *wireframe.AppWireframe) {
 	if err := listener.Close(); err != nil {
 		logrus.WithError(err).Error("Failed to close listener")
 	}
-	time.Sleep(1 * time.Second)
-	// === Start IMAPS (TLS) on Port 993 ===
-	go func() {
-		tlsListener, err := tls.Listen("tcp", "0.0.0.0:993", tlsConfig)
-		if err != nil {
-			log.Printf("❌ Failed to listen on IMAPS (993): %v", err)
-			return
-		}
-
-		log.Println("🔒 IMAPS (TLS) server listening on 0.0.0.0:993")
-
-		if err := server.Serve(ctx, tlsListener); err != nil && err != context.Canceled {
-			log.Printf("❌ IMAPS server error: %v", err)
-		}
-	}()
+	<-ctx.Done()
 }

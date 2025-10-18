@@ -36,7 +36,6 @@ func (conn *MyDBConnector) popUpdates() []imap.Update {
 func (c *MyDBConnector) syncUserDataAfterAuth(ctx context.Context) error {
 	c.queueLock.Lock()
 	defer c.queueLock.Unlock()
-
 	rows, err := c.db.QueryContext(ctx,
 		queries.GetMailboxOfUserQuery(),
 		c.email,
@@ -60,13 +59,7 @@ func (c *MyDBConnector) syncUserDataAfterAuth(ctx context.Context) error {
 		mbox := c.state.createMailbox(imap.MailboxID(id), []string{title}, exclusive)
 		update := imap.NewMailboxCreated(mbox)
 
-		c.state.mailboxes[imap.MailboxID(id)] = &MailboxOptions{
-			name:      []string{title},
-			exclusive: exclusive,
-			id:        imap.MailboxID(id),
-		}
-
-		c.Updates <- update
+		c.updates <- update
 		err, ok := update.WaitContext(ctx)
 		if ok && err != nil {
 			return fmt.Errorf("failed to apply update %v:%w", update.String(), err)
@@ -236,7 +229,7 @@ func (c *MyDBConnector) loadMailboxMessages(ctx context.Context, mboxID imap.Mai
 
 	if len(messages) > 0 {
 		// Split into batches of 100 messages
-		c.Updates <- imap.NewMessagesCreated(true, messages...)
+		c.updates <- imap.NewMessagesCreated(true, messages...)
 	}
 
 	return nil
@@ -245,29 +238,9 @@ func (c *MyDBConnector) loadMailboxMessages(ctx context.Context, mboxID imap.Mai
 // Sync synchronizes the connector state with your database
 // Called by Gluon to refresh mailbox and message state
 // Triggered by: Periodic refresh, or when Gluon needs fresh data
-// func (c *MyDBConnector) Sync(ctx context.Context) error {
-// 	// log.Printf("SYNC: Starting sync for user %s", c.email)
-// 	// if err := c.syncUserDataAfterAuth(ctx); err != nil {
-// 	// 	log.Printf("SYNC: Failed to sync mailboxes: %v", err)
-// 	// 	return err
-// 	// }
-// 	// log.Printf("SYNC: Completed sync for user %s", c.email)
-// 	mBox := imap.Mailbox{
-// 		ID:             imap.MailboxID("5f4dcc3b5aa765d61d8327deb882cf99"),
-// 		Name:           []string{imap.Inbox},
-// 		Flags:          imap.NewFlagSet(`\Answered`, `\Seen`, `\Flagged`, `\Deleted`),
-// 		PermanentFlags: imap.NewFlagSet(`\Answered`, `\Seen`, `\Flagged`, `\Deleted`),
-// 		Attributes:     imap.NewFlagSet(),
-// 	}
-// 	update := imap.NewMailboxCreated(mBox)
-// 	c.Updates <- update
-// 	err, _ := update.WaitContext(ctx)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-
-// }
+func (c *MyDBConnector) Sync(ctx context.Context) error {
+	return c.syncUserDataAfterAuth(ctx)
+}
 
 func (c *MyDBConnector) DebugPrint(label string) {
 	fmt.Printf("%s:\n", label)
@@ -276,7 +249,7 @@ func (c *MyDBConnector) DebugPrint(label string) {
 
 	if c != nil {
 		fmt.Printf("  db: %p (nil=%v)\n", c.db, c.db == nil)
-		fmt.Printf("  updates: %p (nil=%v)\n", c.Updates, c.Updates == nil)
+		fmt.Printf("  updates: %p (nil=%v)\n", c.updates, c.updates == nil)
 		fmt.Printf("  email: %s\n", c.email)
 	}
 }
@@ -284,25 +257,25 @@ func (conn *MyDBConnector) validateName(name []string) (bool, error) {
 	var exclusive bool
 
 	switch {
-	case len(conn.FolderPrefix)+len(conn.LabelsPrefix) == 0:
+	case len(conn.folderPrefix)+len(conn.labelsPrefix) == 0:
 		exclusive = false
 
-	case len(conn.FolderPrefix) > 0 && len(conn.LabelsPrefix) > 0:
-		if name[0] == conn.FolderPrefix {
+	case len(conn.folderPrefix) > 0 && len(conn.labelsPrefix) > 0:
+		if name[0] == conn.folderPrefix {
 			exclusive = true
-		} else if name[0] == conn.LabelsPrefix {
+		} else if name[0] == conn.labelsPrefix {
 			exclusive = false
 		} else {
 			return false, ErrInvalidPrefix
 		}
 
-	case len(conn.FolderPrefix) > 0:
-		if len(name) > 1 && name[0] == conn.FolderPrefix {
+	case len(conn.folderPrefix) > 0:
+		if len(name) > 1 && name[0] == conn.folderPrefix {
 			exclusive = true
 		}
 
-	case len(conn.LabelsPrefix) > 0:
-		if len(name) > 1 && name[0] == conn.LabelsPrefix {
+	case len(conn.labelsPrefix) > 0:
+		if len(name) > 1 && name[0] == conn.labelsPrefix {
 			exclusive = false
 		}
 	}
