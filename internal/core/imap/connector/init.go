@@ -4,160 +4,126 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"log"
-	"strings"
-
-	"github.com/ProtonMail/gluon"
-	"github.com/enjoys-in/airsend-imap/internal/core/imap"
-	"github.com/enjoys-in/airsend-imap/internal/core/queries"
-	"golang.org/x/time/rate"
-
 	"sync"
+
+	"time"
+
+	"github.com/ProtonMail/gluon/connector"
+	"github.com/ProtonMail/gluon/imap"
+	user "github.com/enjoys-in/airsend-imap/internal/interfaces/user"
 )
 
-type ConnectorFactory struct {
-	db             *sql.DB
-	server         *gluon.Server
-	userConnectors map[string]string // email -> gluonUserID
-	mu             sync.RWMutex
-}
-type APIServer struct {
-	cf      *ConnectorFactory
-	apiKey  string // Simple API key for authentication
-	limiter *rate.Limiter
-}
+var (
+	ErrNoSuchMailbox = errors.New("no such mailbox")
+	ErrNoSuchMessage = errors.New("no such message")
 
-// NewAPIServer creates a new API server instance, given a connector factory and an API key.
-// The API server is used to authenticate and authorize API requests.
+	ErrInvalidPrefix   = errors.New("invalid prefix")
+	ErrRenameForbidden = errors.New("rename operation is not allowed")
+	ErrDeleteForbidden = errors.New("delete operation is not allowed")
+)
 
-func NewAPIServer(cf *ConnectorFactory, apiKey string) *APIServer {
-	return &APIServer{
-		cf:      cf,
-		apiKey:  apiKey,
-		limiter: rate.NewLimiter(10, 50), // 10 req/sec, burst of 50
-	}
-}
+type MyDBConnector struct {
+	db                         *sql.DB
+	email                      string
+	updates                    chan imap.Update
+	state                      *MailboxState
+	User                       *user.UserConfig
+	Updates                    chan imap.Update
+	LastClientIMAPID           imap.IMAPID
+	AllowUnknownMailbox        bool
+	FolderPrefix, LabelsPrefix string
+	UpdatesAllowedToFail       int32
 
-func NewConnectorFactory(db *sql.DB, server *gluon.Server) *ConnectorFactory {
-	return &ConnectorFactory{
-		db:             db,
-		server:         server,
-		userConnectors: make(map[string]string),
-	}
+	queueLock           sync.Mutex
+	queue               []imap.Update
+	MailboxVisibilities map[imap.MailboxID]imap.MailboxVisibility
 }
 
-// GetOrCreateUser returns the Gluon user ID for an email, creating if needed
-func (cf *ConnectorFactory) GetOrCreateUser(ctx context.Context, email string, password string) (string, error) {
-	// Create new connector for this user
-	gluonID, err := cf.LoadGluonIdFromDB(ctx, email)
-
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			log.Printf("❌ Failed to load user from DB: %v", err)
-		}
+func NewConnector(db *sql.DB, email string) *MyDBConnector {
+	return &MyDBConnector{
+		db:      db,
+		email:   email,
+		updates: make(chan imap.Update, 100),
 	}
-
-	userConnector := imap.NewMyDatabaseConnector(cf.db, email)
-
-	// If gluonID exists, try loading user into Gluon
-	if gluonID != "" {
-		if exists, err := cf.server.LoadUser(ctx, userConnector, gluonID, []byte(password)); err == nil && !exists {
-			log.Printf("✅ Loaded existing Gluon user: %s (%s)", email, gluonID)
-		}
-	} else {
-		// Add user to Gluon
-		gluonUserID, err := cf.server.AddUser(ctx, userConnector, []byte(password))
-		if err != nil {
-			return "", fmt.Errorf("failed to add user to Gluon: %w", err)
-		}
-		if err := cf.saveGluonIDToDB(ctx, email, gluonUserID); err != nil {
-			log.Printf("⚠️ Failed to save new Gluon ID for %s: %v", email, err)
-		}
-		cf.userConnectors[email] = gluonUserID
-		gluonID = gluonUserID
-		log.Printf("Dynamically added user: %s (Gluon ID: %s)", email, gluonUserID)
-	}
-
-	if err := userConnector.Sync(ctx); err != nil {
-		return "", fmt.Errorf("failed to sync user %s: %w", email, err)
-	}
-	return gluonID, nil
 }
 
-func (cf *ConnectorFactory) saveGluonIDToDB(ctx context.Context, email, gluonID string) error {
-	_, err := cf.db.ExecContext(ctx, `UPDATE mail_accounts SET gluon_id = $1 WHERE email = $2;`,
-		gluonID, email)
-	return err
+func (c *MyDBConnector) Init(ctx context.Context, cache connector.IMAPState) error { return nil }
+
+// Authorize returns whether the given username/password combination are valid for this connector.
+func (c *MyDBConnector) Authorize(ctx context.Context, username string, password []byte) bool {
+	return true
 }
 
-func (cf *ConnectorFactory) LoadGluonIdFromDB(ctx context.Context, email string) (string, error) {
-	cf.mu.RLock()
-	if gluonUserID, exists := cf.userConnectors[email]; exists {
-		cf.mu.RUnlock()
-		return gluonUserID, nil
-	}
-	cf.mu.RUnlock()
+// CreateMailbox creates a mailbox with the given name.
+func (c *MyDBConnector) CreateMailbox(ctx context.Context, cache connector.IMAPStateWrite, name []string) (imap.Mailbox, error) {
 
-	row := cf.db.QueryRowContext(ctx, queries.GetGluonIDQuery(), email)
-
-	var gluonUserID string
-	err := row.Scan(&gluonUserID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			log.Printf("⚠️ No user found in DB for email: %s", email)
-			return "", err // or return "", sql.ErrNoRows if you want caller to handle
-		}
-		log.Printf("❌ Failed to scan user row for %s: %v", email, err)
-		return "", err
-	}
-
-	// Handle empty gluon_id value
-	if strings.TrimSpace(gluonUserID) == "" {
-		log.Printf("⚠️ Gluon ID empty for user: %s", email)
-		return "", fmt.Errorf("empty gluon_id for email %s", email)
-	}
-
-	// Cache and return
-	cf.mu.Lock()
-	cf.userConnectors[email] = gluonUserID
-	cf.mu.Unlock()
-
-	log.Printf("→ Loaded IMAP user from DB: %s (gluon_id: %s)", email, gluonUserID)
-	return gluonUserID, nil
+	return imap.Mailbox{}, nil
 }
 
-func (cf *ConnectorFactory) RemoveUser(ctx context.Context, email string) error {
-	cf.mu.Lock()
-	defer cf.mu.Unlock()
+// GetMessageLiteral is intended to be used by Gluon when, for some reason, the local cached data no longer exists.
+// Note: this can get called from different go routines.
+func (c *MyDBConnector) GetMessageLiteral(ctx context.Context, id imap.MessageID) ([]byte, error) {
+	return []byte("fdffd"), nil
+}
 
-	gluonUserID, exists := cf.userConnectors[email]
-	if !exists {
-		return fmt.Errorf("user not loaded")
-	}
+// GetMailboxVisibility can be used to retrieve the visibility of mailboxes for connected clients.
+func (c *MyDBConnector) GetMailboxVisibility(ctx context.Context, mboxID imap.MailboxID) imap.MailboxVisibility {
 
-	// Remove from Gluon (if API exists)
-	cf.server.RemoveUser(ctx, gluonUserID, true)
+	return imap.Visible
+}
 
-	delete(cf.userConnectors, email)
-	log.Printf("→ Removed IMAP user: %s", email)
-
+// UpdateMailboxName sets the name of the mailbox with the given ID.
+func (c *MyDBConnector) UpdateMailboxName(ctx context.Context, cache connector.IMAPStateWrite, mboxID imap.MailboxID, newName []string) error {
 	return nil
 }
 
-func (cf *ConnectorFactory) GetActiveUserCount() ([]string, int) {
-	cf.mu.RLock()
-	defer cf.mu.RUnlock()
-	users := make([]string, 0, len(cf.userConnectors))
-	for email := range cf.userConnectors {
-		users = append(users, email)
-	}
-	return users, len(cf.userConnectors)
+// DeleteMailbox deletes the mailbox with the given ID.
+func (c *MyDBConnector) DeleteMailbox(ctx context.Context, cache connector.IMAPStateWrite, mboxID imap.MailboxID) error {
+	return nil
 }
 
-func (cf *ConnectorFactory) IsUserLoaded(email string) bool {
-	cf.mu.RLock()
-	defer cf.mu.RUnlock()
-	_, exists := cf.userConnectors[email]
-	return exists
+// CreateMessage creates a new message on the remote.
+func (c *MyDBConnector) CreateMessage(ctx context.Context, cache connector.IMAPStateWrite, mboxID imap.MailboxID, literal []byte, flags imap.FlagSet, date time.Time) (imap.Message, []byte, error) {
+	return imap.Message{}, nil, nil
+}
+
+// AddMessagesToMailbox adds the given messages to the given mailbox.
+func (c *MyDBConnector) AddMessagesToMailbox(ctx context.Context, cache connector.IMAPStateWrite, messageIDs []imap.MessageID, mboxID imap.MailboxID) error {
+	return nil
+}
+
+// RemoveMessagesFromMailbox removes the given messages from the given mailbox.
+func (c *MyDBConnector) RemoveMessagesFromMailbox(ctx context.Context, cache connector.IMAPStateWrite, messageIDs []imap.MessageID, mboxID imap.MailboxID) error {
+	return nil
+}
+
+// MoveMessages removes the given messages from one mailbox and adds them to the another mailbox.
+// Returns true if the original messages should be removed from mboxFromID (e.g: Distinguishing between labels and folders).
+func (c *MyDBConnector) MoveMessages(ctx context.Context, cache connector.IMAPStateWrite, messageIDs []imap.MessageID, mboxFromID, mboxToID imap.MailboxID) (bool, error) {
+	return true, nil
+}
+
+// MarkMessagesSeen sets the seen value of the given messages.
+func (c *MyDBConnector) MarkMessagesSeen(ctx context.Context, cache connector.IMAPStateWrite, messageIDs []imap.MessageID, seen bool) error {
+	return nil
+}
+
+// MarkMessagesFlagged sets the flagged value of the given messages.
+func (c *MyDBConnector) MarkMessagesFlagged(ctx context.Context, cache connector.IMAPStateWrite, messageIDs []imap.MessageID, flagged bool) error {
+	return nil
+}
+
+// MarkMessagesForwarded sets the forwarded value of the give messages.
+func (c *MyDBConnector) MarkMessagesForwarded(ctx context.Context, cache connector.IMAPStateWrite, messageIDs []imap.MessageID, forwarded bool) error {
+	return nil
+}
+
+// GetUpdates returns a stream of updates that the gluon server should apply.
+func (c *MyDBConnector) GetUpdates() <-chan imap.Update {
+	return c.updates
+}
+
+func (c *MyDBConnector) Close(ctx context.Context) error {
+	close(c.updates)
+	return nil
 }

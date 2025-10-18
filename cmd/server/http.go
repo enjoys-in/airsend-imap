@@ -19,14 +19,14 @@ func RunHttpApi(app *wireframe.AppWireframe) {
 
 	mux := routes.InitRoutes(app)
 
-	port := ":8080"
+	port := ":9000"
 	log.Println("🚀 HTTP Server Initializing on port", port)
 	server := &http.Server{
 		Addr:    port,
 		Handler: mux,
 	}
 
-	log.Println("🚀 HTTP API running on :8080")
+	log.Println("🚀 HTTP API running on :9000")
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("❌ HTTP server failed: %v", err)
 	}

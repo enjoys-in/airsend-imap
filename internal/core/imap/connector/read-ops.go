@@ -1,4 +1,4 @@
-package imap
+package connector
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 // ClearUpdates clears all pending updates in the channel
 // Useful for testing or resetting state
-func (c *MyDatabaseConnector) ClearUpdates() {
+func (c *MyDBConnector) ClearUpdates() {
 	log.Printf("ClearUpdates: Clearing pending updates")
 
 	// Drain the updates channel
@@ -28,7 +28,7 @@ func (c *MyDatabaseConnector) ClearUpdates() {
 
 // Flush flushes any pending operations
 // Useful for ensuring all writes are committed
-func (c *MyDatabaseConnector) Flush() {
+func (c *MyDBConnector) Flush() {
 	log.Printf("Flush: Flushing pending operations")
 	// If you have any buffering or caching, flush it here
 	// For database operations, might want to ensure all transactions are committed
@@ -36,7 +36,7 @@ func (c *MyDatabaseConnector) Flush() {
 
 // GetLastRecordedIMAPID returns the last IMAP ID received from client
 // Used for tracking client information
-func (c *MyDatabaseConnector) GetLastRecordedIMAPID() imap.IMAPID {
+func (c *MyDBConnector) GetLastRecordedIMAPID() imap.IMAPID {
 	log.Printf("GetLastRecordedIMAPID: Retrieving last recorded IMAP ID")
 
 	// If you're tracking client IMAP IDs, return them here
@@ -46,7 +46,7 @@ func (c *MyDatabaseConnector) GetLastRecordedIMAPID() imap.IMAPID {
 
 // MailboxCreated simulates external mailbox creation
 // Used to test mailbox creation from external source (e.g., webmail)
-func (c *MyDatabaseConnector) MailboxCreated(mbox imap.Mailbox) error {
+func (c *MyDBConnector) MailboxCreated(mbox imap.Mailbox) error {
 	log.Printf("MailboxCreated: Simulating mailbox creation: %s", mbox.Name)
 
 	// Push update to Gluon
@@ -58,7 +58,7 @@ func (c *MyDatabaseConnector) MailboxCreated(mbox imap.Mailbox) error {
 }
 
 // MailboxDeleted simulates external mailbox deletion
-func (c *MyDatabaseConnector) MailboxDeleted(mboxID imap.MailboxID) error {
+func (c *MyDBConnector) MailboxDeleted(mboxID imap.MailboxID) error {
 	log.Printf("MailboxDeleted: Simulating mailbox deletion: %s", mboxID)
 
 	// Push update to Gluon
@@ -70,7 +70,7 @@ func (c *MyDatabaseConnector) MailboxDeleted(mboxID imap.MailboxID) error {
 }
 
 // MessageAdded simulates adding an existing message to a mailbox
-func (c *MyDatabaseConnector) MessageAdded(messageID imap.MessageID, mboxID imap.MailboxID) error {
+func (c *MyDBConnector) MessageAdded(messageID imap.MessageID, mboxID imap.MailboxID) error {
 	log.Printf("MessageAdded: Simulating message %s added to mailbox %s", messageID, mboxID)
 
 	// Push update to Gluon
@@ -84,7 +84,7 @@ func (c *MyDatabaseConnector) MessageAdded(messageID imap.MessageID, mboxID imap
 
 // MessageCreated simulates external message creation
 // Used when a message arrives via SMTP or other external means
-func (c *MyDatabaseConnector) MessageCreated(message imap.Message, literal []byte, mboxIDs []imap.MailboxID) error {
+func (c *MyDBConnector) MessageCreated(message imap.Message, literal []byte, mboxIDs []imap.MailboxID) error {
 	log.Printf("MessageCreated: Simulating message creation: %s in %d mailboxes", message.ID, len(mboxIDs))
 
 	// In production, you'd save the message to database here
@@ -103,7 +103,7 @@ func (c *MyDatabaseConnector) MessageCreated(message imap.Message, literal []byt
 }
 
 // MessagesCreated simulates batch message creation
-func (c *MyDatabaseConnector) MessagesCreated(messages []imap.Message, literals [][]byte, mboxIDs [][]imap.MailboxID) error {
+func (c *MyDBConnector) MessagesCreated(messages []imap.Message, literals [][]byte, mboxIDs [][]imap.MailboxID) error {
 	log.Printf("MessagesCreated: Simulating batch creation of %d messages", len(messages))
 
 	// Convert to MessageCreated slice
@@ -125,7 +125,7 @@ func (c *MyDatabaseConnector) MessagesCreated(messages []imap.Message, literals 
 }
 
 // MessageDeleted simulates external message deletion
-func (c *MyDatabaseConnector) MessageDeleted(messageID imap.MessageID) error {
+func (c *MyDBConnector) MessageDeleted(messageID imap.MessageID) error {
 	log.Printf("MessageDeleted: Simulating message deletion: %s", messageID)
 
 	// Push update to Gluon
@@ -137,7 +137,7 @@ func (c *MyDatabaseConnector) MessageDeleted(messageID imap.MessageID) error {
 }
 
 // MessageFlagged simulates external flag change (flagged)
-func (c *MyDatabaseConnector) MessageFlagged(messageID imap.MessageID, flagged bool) error {
+func (c *MyDBConnector) MessageFlagged(messageID imap.MessageID, flagged bool) error {
 	log.Printf("MessageFlagged: Simulating flagged=%v for message %s", flagged, messageID)
 
 	flags := imap.NewFlagSet()
@@ -155,7 +155,7 @@ func (c *MyDatabaseConnector) MessageFlagged(messageID imap.MessageID, flagged b
 }
 
 // MessageSeen simulates external flag change (seen)
-func (c *MyDatabaseConnector) MessageSeen(messageID imap.MessageID, seen bool) error {
+func (c *MyDBConnector) MessageSeen(messageID imap.MessageID, seen bool) error {
 	log.Printf("MessageSeen: Simulating seen=%v for message %s", seen, messageID)
 
 	flags := imap.NewFlagSet()
@@ -173,7 +173,7 @@ func (c *MyDatabaseConnector) MessageSeen(messageID imap.MessageID, seen bool) e
 }
 
 // MessageRemoved simulates removing a message from a mailbox (for labels)
-func (c *MyDatabaseConnector) MessageRemoved(messageID imap.MessageID, mboxID imap.MailboxID) error {
+func (c *MyDBConnector) MessageRemoved(messageID imap.MessageID, mboxID imap.MailboxID) error {
 	log.Printf("MessageRemoved: Simulating message %s removed from mailbox %s", messageID, mboxID)
 
 	// Push update to Gluon
@@ -184,7 +184,7 @@ func (c *MyDatabaseConnector) MessageRemoved(messageID imap.MessageID, mboxID im
 }
 
 // MessageUpdated simulates message content update
-func (c *MyDatabaseConnector) MessageUpdated(message imap.Message, literal []byte, mboxIDs []imap.MailboxID) error {
+func (c *MyDBConnector) MessageUpdated(message imap.Message, literal []byte, mboxIDs []imap.MailboxID) error {
 	log.Printf("MessageUpdated: Simulating message update: %s", message.ID)
 
 	// Push update to Gluon
@@ -196,7 +196,7 @@ func (c *MyDatabaseConnector) MessageUpdated(message imap.Message, literal []byt
 }
 
 // UIDValidityBumped simulates UID validity bump
-func (c *MyDatabaseConnector) UIDValidityBumped() {
+func (c *MyDBConnector) UIDValidityBumped() {
 	log.Printf("UIDValidityBumped: Simulating UID validity bump")
 
 	// This is typically called internally, not from external events
@@ -209,35 +209,35 @@ func (c *MyDatabaseConnector) UIDValidityBumped() {
 
 // SetAllowMessageCreateWithUnknownMailboxID allows creating messages
 // in mailboxes that don't exist yet (useful for some sync scenarios)
-func (c *MyDatabaseConnector) SetAllowMessageCreateWithUnknownMailboxID(value bool) {
+func (c *MyDBConnector) SetAllowMessageCreateWithUnknownMailboxID(value bool) {
 	log.Printf("SetAllowMessageCreateWithUnknownMailboxID: Setting to %v", value)
 	c.AllowUnknownMailbox = value
 }
 
 // SetFolderPrefix sets the prefix for regular folders
 // Example: "INBOX." for nested folders like "INBOX.Sent"
-func (c *MyDatabaseConnector) SetFolderPrefix(pfx string) {
+func (c *MyDBConnector) SetFolderPrefix(pfx string) {
 	log.Printf("SetFolderPrefix: Setting folder prefix to '%s'", pfx)
 	c.FolderPrefix = pfx
 }
 
 // SetLabelsPrefix sets the prefix for Gmail-style labels
 // Example: "[Gmail]/" for labels like "[Gmail]/Sent"
-func (c *MyDatabaseConnector) SetLabelsPrefix(pfx string) {
+func (c *MyDBConnector) SetLabelsPrefix(pfx string) {
 	log.Printf("SetLabelsPrefix: Setting labels prefix to '%s'", pfx)
 	c.LabelsPrefix = pfx
 }
 
 // SetMailboxVisibility sets visibility for a mailbox
 // Used to hide/show mailboxes in LIST responses
-func (c *MyDatabaseConnector) SetMailboxVisibility(id imap.MailboxID, visibility imap.MailboxVisibility) {
+func (c *MyDBConnector) SetMailboxVisibility(id imap.MailboxID, visibility imap.MailboxVisibility) {
 	log.Printf("SetMailboxVisibility: Setting mailbox %s visibility to %v", id, visibility)
 
 	// Update in database
 	ctx := context.Background()
 	hidden := visibility == imap.Hidden
 
-	_, err := c.DB.ExecContext(ctx,
+	_, err := c.db.ExecContext(ctx,
 		"UPDATE mailboxes SET hidden = $1 WHERE id = $2 AND user_id = $3",
 		hidden, string(id), c.User.Email,
 	)
@@ -249,18 +249,18 @@ func (c *MyDatabaseConnector) SetMailboxVisibility(id imap.MailboxID, visibility
 
 // SetUpdatesAllowedToFail controls whether update failures are fatal
 // If true, failed updates won't stop the connector
-func (c *MyDatabaseConnector) SetUpdatesAllowedToFail(value int32) {
+func (c *MyDBConnector) SetUpdatesAllowedToFail(value int32) {
 	log.Printf("SetUpdatesAllowedToFail: Setting to %v", value)
 	c.UpdatesAllowedToFail = value
 }
 
 // Example: When new email arrives via SMTP
-func (c *MyDatabaseConnector) OnSMTPMessageReceived(ctx context.Context, rawEmail []byte, recipientMailbox string) error {
+func (c *MyDBConnector) OnSMTPMessageReceived(ctx context.Context, rawEmail []byte, recipientMailbox string) error {
 	log.Printf("OnSMTPMessageReceived: New email arrived for mailbox %s", recipientMailbox)
 
 	// 1. Save to database
 	var mboxID string
-	err := c.DB.QueryRowContext(ctx,
+	err := c.db.QueryRowContext(ctx,
 		"SELECT id FROM mailboxes WHERE name = $1 AND user_id = $2",
 		recipientMailbox, c.User.Email,
 	).Scan(&mboxID)
@@ -271,7 +271,7 @@ func (c *MyDatabaseConnector) OnSMTPMessageReceived(ctx context.Context, rawEmai
 
 	// 2. Create message record
 	var msgID string
-	err = c.DB.QueryRowContext(ctx,
+	err = c.db.QueryRowContext(ctx,
 		"INSERT INTO messages (user_id, mailbox_id, raw_content, date, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
 		c.User.Email, mboxID, rawEmail, context.Background(), context.Background(),
 	).Scan(&msgID)
@@ -291,11 +291,11 @@ func (c *MyDatabaseConnector) OnSMTPMessageReceived(ctx context.Context, rawEmai
 }
 
 // Example: When webmail marks message as read
-func (c *MyDatabaseConnector) OnWebmailMarkAsRead(ctx context.Context, messageID string) error {
+func (c *MyDBConnector) OnWebmailMarkAsRead(ctx context.Context, messageID string) error {
 	log.Printf("OnWebmailMarkAsRead: Webmail marked message %s as read", messageID)
 
 	// 1. Update database
-	_, err := c.DB.ExecContext(ctx,
+	_, err := c.db.ExecContext(ctx,
 		"UPDATE messages SET seen = true WHERE id = $1 AND user_id = $2",
 		messageID, c.User.Email,
 	)
@@ -309,12 +309,12 @@ func (c *MyDatabaseConnector) OnWebmailMarkAsRead(ctx context.Context, messageID
 }
 
 // Example: When webmail creates new folder
-func (c *MyDatabaseConnector) OnWebmailCreateFolder(ctx context.Context, folderName string) error {
+func (c *MyDBConnector) OnWebmailCreateFolder(ctx context.Context, folderName string) error {
 	log.Printf("OnWebmailCreateFolder: Webmail created folder %s", folderName)
 
 	// 1. Insert to database
 	var mboxID string
-	err := c.DB.QueryRowContext(ctx,
+	err := c.db.QueryRowContext(ctx,
 		"INSERT INTO mailboxes (user_id, name, created_at) VALUES ($1, $2, $3) RETURNING id",
 		c.User.Email, folderName, context.Background(),
 	).Scan(&mboxID)
@@ -333,7 +333,7 @@ func (c *MyDatabaseConnector) OnWebmailCreateFolder(ctx context.Context, folderN
 }
 
 // Example: Flush and clear on disconnect
-func (c *MyDatabaseConnector) OnDisconnect(ctx context.Context) error {
+func (c *MyDBConnector) OnDisconnect(ctx context.Context) error {
 	log.Printf("OnDisconnect: User disconnecting")
 
 	// Flush any pending operations

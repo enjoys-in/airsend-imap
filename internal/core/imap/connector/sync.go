@@ -1,4 +1,4 @@
-package imap
+package connector
 
 import (
 	"context"
@@ -21,7 +21,7 @@ const (
 	PriorityLow    MessagePriority = "low"
 )
 
-func (conn *MyDatabaseConnector) popUpdates() []imap.Update {
+func (conn *MyDBConnector) popUpdates() []imap.Update {
 	conn.queueLock.Lock()
 	defer conn.queueLock.Unlock()
 
@@ -33,13 +33,13 @@ func (conn *MyDatabaseConnector) popUpdates() []imap.Update {
 }
 
 // syncUserData loads mailboxes and messages from DB and pushes to Gluon
-func (c *MyDatabaseConnector) syncUserDataAfterAuth(ctx context.Context) error {
+func (c *MyDBConnector) syncUserDataAfterAuth(ctx context.Context) error {
 	c.queueLock.Lock()
 	defer c.queueLock.Unlock()
 
-	rows, err := c.DB.QueryContext(ctx,
+	rows, err := c.db.QueryContext(ctx,
 		queries.GetMailboxOfUserQuery(),
-		c.Email,
+		c.email,
 	)
 	if err != nil {
 		return err
@@ -105,12 +105,12 @@ func getMailboxAttributes(mailboxName string, hasChildren bool) imap.FlagSet {
 }
 
 // loadMailboxMessages loads messages for a specific mailbox
-func (c *MyDatabaseConnector) loadMailboxMessages(ctx context.Context, mboxID imap.MailboxID) error {
+func (c *MyDBConnector) loadMailboxMessages(ctx context.Context, mboxID imap.MailboxID) error {
 	log.Printf("Loading messages for mailbox %s", mboxID)
-	rows, err := c.DB.QueryContext(ctx,
+	rows, err := c.db.QueryContext(ctx,
 		queries.GetMailboxByIDQuery(),
 		string(mboxID), // folder id
-		c.Email,        // user email
+		c.email,        // user email
 	)
 	if err != nil {
 		log.Printf("Failed to query messages: %v", err)
@@ -245,28 +245,42 @@ func (c *MyDatabaseConnector) loadMailboxMessages(ctx context.Context, mboxID im
 // Sync synchronizes the connector state with your database
 // Called by Gluon to refresh mailbox and message state
 // Triggered by: Periodic refresh, or when Gluon needs fresh data
-func (c *MyDatabaseConnector) Sync(ctx context.Context) error {
-	log.Printf("SYNC: Starting sync for user %s", c.Email)
-	if err := c.syncUserDataAfterAuth(ctx); err != nil {
-		log.Printf("SYNC: Failed to sync mailboxes: %v", err)
-		return err
-	}
-	log.Printf("SYNC: Completed sync for user %s", c.Email)
-	return nil
-}
+// func (c *MyDBConnector) Sync(ctx context.Context) error {
+// 	// log.Printf("SYNC: Starting sync for user %s", c.email)
+// 	// if err := c.syncUserDataAfterAuth(ctx); err != nil {
+// 	// 	log.Printf("SYNC: Failed to sync mailboxes: %v", err)
+// 	// 	return err
+// 	// }
+// 	// log.Printf("SYNC: Completed sync for user %s", c.email)
+// 	mBox := imap.Mailbox{
+// 		ID:             imap.MailboxID("5f4dcc3b5aa765d61d8327deb882cf99"),
+// 		Name:           []string{imap.Inbox},
+// 		Flags:          imap.NewFlagSet(`\Answered`, `\Seen`, `\Flagged`, `\Deleted`),
+// 		PermanentFlags: imap.NewFlagSet(`\Answered`, `\Seen`, `\Flagged`, `\Deleted`),
+// 		Attributes:     imap.NewFlagSet(),
+// 	}
+// 	update := imap.NewMailboxCreated(mBox)
+// 	c.Updates <- update
+// 	err, _ := update.WaitContext(ctx)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
 
-func (c *MyDatabaseConnector) DebugPrint(label string) {
+// }
+
+func (c *MyDBConnector) DebugPrint(label string) {
 	fmt.Printf("%s:\n", label)
 	fmt.Printf("  connector ptr: %p\n", c)
 	fmt.Printf("  c == nil: %v\n", c == nil)
 
 	if c != nil {
-		fmt.Printf("  db: %p (nil=%v)\n", c.DB, c.DB == nil)
+		fmt.Printf("  db: %p (nil=%v)\n", c.db, c.db == nil)
 		fmt.Printf("  updates: %p (nil=%v)\n", c.Updates, c.Updates == nil)
-		fmt.Printf("  email: %s\n", c.Email)
+		fmt.Printf("  email: %s\n", c.email)
 	}
 }
-func (conn *MyDatabaseConnector) validateName(name []string) (bool, error) {
+func (conn *MyDBConnector) validateName(name []string) (bool, error) {
 	var exclusive bool
 
 	switch {

@@ -1,4 +1,4 @@
-package imap
+package connector
 
 import (
 	"github.com/ProtonMail/gluon/imap"
@@ -10,21 +10,21 @@ import (
 // ============================================================
 
 // PushMailboxCreated notifies Gluon about new mailbox
-func (c *MyDatabaseConnector) PushMailboxCreated(mbox imap.Mailbox) {
+func (c *MyDBConnector) PushMailboxCreated(mbox imap.Mailbox) {
 	c.Updates <- &imap.MailboxCreated{
 		Mailbox: mbox,
 	}
 }
 
 // PushMailboxDeleted notifies Gluon about deleted mailbox
-func (c *MyDatabaseConnector) PushMailboxDeleted(mboxID imap.MailboxID) {
+func (c *MyDBConnector) PushMailboxDeleted(mboxID imap.MailboxID) {
 	c.Updates <- &imap.MailboxDeleted{
 		MailboxID: mboxID,
 	}
 }
 
 // // PushMailboxRenamed notifies Gluon about renamed mailbox
-// func (c *MyDatabaseConnector) PushMailboxRenamed(mboxID imap.MailboxID, newName []string) {
+// func (c *MyDBConnector) PushMailboxRenamed(mboxID imap.MailboxID, newName []string) {
 // 	c.Updates <- &imap.MailboxRenamed{
 // 		MailboxID: mboxID,
 // 		NewName:   newName,
@@ -33,21 +33,21 @@ func (c *MyDatabaseConnector) PushMailboxDeleted(mboxID imap.MailboxID) {
 // }
 
 // PushMessagesCreated notifies Gluon about new messages
-// func (c *MyDatabaseConnector) PushMessagesCreated(messages []imap.Message) {
+// func (c *MyDBConnector) PushMessagesCreated(messages []imap.Message) {
 // 	c.Updates <- &imap.MessagesCreated{
 // 		Messages: messages,
 // 	}
 // }
 
 // PushMessageDeleted notifies Gluon about deleted message
-func (c *MyDatabaseConnector) PushMessageDeleted(messageID imap.MessageID) {
+func (c *MyDBConnector) PushMessageDeleted(messageID imap.MessageID) {
 	c.Updates <- &imap.MessageDeleted{
 		MessageID: messageID,
 	}
 }
 
 // PushMessageFlagsChanged notifies Gluon about flag changes
-// func (c *MyDatabaseConnector) PushMessageFlagsChanged(messageID imap.MessageID, flags imap.FlagSet) {
+// func (c *MyDBConnector) PushMessageFlagsChanged(messageID imap.MessageID, flags imap.FlagSet) {
 // 	c.Updates <- &imap.MessageFlagsChanged{
 // 		MessageID: messageID,
 // 		Flags:     flags,
@@ -55,7 +55,7 @@ func (c *MyDatabaseConnector) PushMessageDeleted(messageID imap.MessageID) {
 // }
 
 // // PushMessageMoved notifies Gluon about moved message
-// func (c *MyDatabaseConnector) PushMessageMoved(messageID imap.MessageID, fromMbox, toMbox imap.MailboxID) {
+// func (c *MyDBConnector) PushMessageMoved(messageID imap.MessageID, fromMbox, toMbox imap.MailboxID) {
 // 	c.Updates <- &imap.MessageMoved{
 // 		MessageID:     messageID,
 // 		FromMailboxID: fromMbox,
